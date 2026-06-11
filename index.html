@@ -15,33 +15,32 @@
   .badge small{display:block;color:var(--sub);font-weight:500;font-size:.72rem;letter-spacing:0}
   .maptools{position:absolute;top:12px;right:12px;z-index:5;display:flex;flex-direction:column;gap:8px}
   .maptools button{font:inherit;font-weight:700;border:1px solid var(--line);border-radius:10px;padding:9px 13px;cursor:pointer;background:rgba(11,16,32,.82);color:var(--txt);backdrop-filter:blur(6px)}
-  /* viseur central */
   .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:2px solid var(--accent);border-radius:10px;box-shadow:0 0 0 9999px rgba(8,12,24,.32);pointer-events:none;z-index:4}
   .frame .lbl{position:absolute;top:-26px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:.72rem;font-weight:700;color:var(--accent);background:rgba(11,16,32,.8);padding:3px 9px;border-radius:8px}
-  .frame .corner{position:absolute;width:14px;height:14px;border:3px solid var(--accent)}
-  .frame .tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:6px 0 0 0}
-  .frame .tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 6px 0 0}
-  .frame .bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 6px}
-  .frame .br{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 6px 0}
+  .frame .grid{position:absolute;inset:0;display:grid;pointer-events:none}
+  .frame .grid div{border:.5px dashed rgba(90,209,192,.5)}
+  .frame i.corner{position:absolute;width:14px;height:14px;border:3px solid var(--accent)}
+  .frame .tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:6px 0 0 0}.frame .tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 6px 0 0}
+  .frame .bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 6px}.frame .br{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 6px 0}
   .panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
   .ph{padding:16px 18px;border-bottom:1px solid var(--line)}
   .ph h1{font-size:1.1rem}.ph p{color:var(--sub);font-size:.82rem;margin-top:3px}
-  #view{height:300px;background:#0a0f1f;border-bottom:1px solid var(--line);position:relative}
+  #view{height:280px;background:#0a0f1f;border-bottom:1px solid var(--line);position:relative}
   #view .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:.85rem;text-align:center;padding:20px}
   .ctrl{padding:16px 18px;overflow:auto;flex:1}
-  .row{margin-bottom:15px}
+  .row{margin-bottom:14px}
+  .sec{font-size:.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin:18px 0 10px;font-weight:800}
   label{font-size:.8rem;color:var(--sub);margin-bottom:7px;display:flex;justify-content:space-between}
   label b{color:var(--txt)}
   input[type=range]{width:100%;accent-color:var(--accent)}
   .btn{width:100%;font:inherit;font-weight:800;border:0;border-radius:12px;padding:14px;cursor:pointer;margin-top:4px}
-  .gen{background:var(--accent2);color:#0a0e22}
-  .dl{background:var(--accent);color:#04231f}
+  .gen{background:var(--accent2);color:#0a0e22}.dl{background:var(--accent);color:#04231f}
   .btn:disabled{opacity:.4;cursor:not-allowed}
   .status{font-size:.82rem;color:var(--sub);margin-top:12px;min-height:1.2em;line-height:1.5}
   .status.err{color:#fb7185}.status.ok{color:var(--accent)}
   .info{font-size:.76rem;color:var(--sub);background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:6px;line-height:1.5}
   .info b{color:var(--txt)}
-  @media(max-width:820px){.app{grid-template-columns:1fr;grid-template-rows:46vh 54vh}.panel{border-left:0;border-top:1px solid var(--line)}#view{height:190px}}
+  @media(max-width:820px){.app{grid-template-columns:1fr;grid-template-rows:46vh 54vh}.panel{border-left:0;border-top:1px solid var(--line)}#view{height:180px}}
 </style>
 </head>
 <body>
@@ -49,32 +48,35 @@
   <div id="map">
     <div class="badge">🧊 Topo3D<small>terrain imprimable</small></div>
     <div class="maptools"><button id="basemap">🛰️ Satellite</button></div>
-    <div class="frame" id="frame"><span class="lbl">Cadre la zone à imprimer</span><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i></div>
+    <div class="frame" id="frame"><span class="lbl">Cadre la zone à imprimer</span><div class="grid" id="fgrid"></div><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i></div>
   </div>
 
   <div class="panel">
-    <div class="ph"><h1>Réglages d'impression</h1><p>Déplace/zoome la carte pour cadrer la zone, puis génère.</p></div>
+    <div class="ph"><h1>Réglages d'impression</h1><p>Cadre la zone (déplace/zoome), règle, génère.</p></div>
     <div id="view"><div class="empty" id="viewEmpty">Le modèle 3D apparaîtra ici après génération.</div></div>
     <div class="ctrl">
       <div class="row"><label>Cadre <b id="vFrame">72 %</b></label><input type="range" id="frameSz" min="35" max="92" step="1" value="72"></div>
-      <div class="row"><label>Taille max <b id="vSize">100 mm</b></label><input type="range" id="size" min="40" max="200" step="5" value="100"></div>
+      <div class="row"><label>Taille totale max <b id="vSize">120 mm</b></label><input type="range" id="size" min="40" max="400" step="5" value="120"></div>
       <div class="row"><label>Exagération verticale <b id="vExag">2.0×</b></label><input type="range" id="exag" min="1" max="6" step="0.1" value="2"></div>
       <div class="row"><label>Épaisseur du socle <b id="vBase">3 mm</b></label><input type="range" id="base" min="0" max="15" step="0.5" value="3"></div>
       <div class="row"><label>Résolution (grille) <b id="vRes">180</b></label><input type="range" id="res" min="60" max="250" step="10" value="180"></div>
-      <button class="btn gen" id="gen">⛰️ Générer le modèle 3D</button>
+
+      <div class="sec">🧩 Découpe (petite imprimante)</div>
+      <div class="row"><label>Colonnes <b id="vCols">1</b></label><input type="range" id="cols" min="1" max="6" step="1" value="1"></div>
+      <div class="row"><label>Lignes <b id="vRows">1</b></label><input type="range" id="rows" min="1" max="6" step="1" value="1"></div>
+      <div class="info" id="pieceInfo">1 seule pièce. Augmente colonnes/lignes pour découper : chaque pièce sort en STL séparé (ZIP), bords jointifs à coller.</div>
+
+      <button class="btn gen" id="gen" style="margin-top:14px">⛰️ Générer le modèle 3D</button>
       <button class="btn dl" id="dl" disabled style="margin-top:10px">⬇️ Télécharger le STL</button>
       <div class="status" id="status"></div>
-      <div class="info">Élévation : <b>Terrain Tiles (Terrarium)</b>, AWS Open Data. Fond de carte : <b>OpenFreeMap</b> + Esri (comme Pista). Le STL s'interprète en <b>millimètres</b>.</div>
+      <div class="info">Élévation <b>Terrarium</b> (AWS Open Data) · fond <b>OpenFreeMap</b>/Esri (comme Pista) · STL en <b>mm</b>.</div>
     </div>
   </div>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js"></script>
 <script type="importmap">
-{ "imports": {
-  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-}}
+{ "imports": { "three":"https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/" }}
 </script>
 <script type="module">
 import * as THREE from 'three';
@@ -82,106 +84,145 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
 const $ = id => document.getElementById(id);
-let lastMesh = null;
+let pieces=[], lastBBox=null, fullSize=[0,0];
 
-/* ---------- carte (mêmes sources que Pista) ---------- */
-const OPENFREEMAP = 'https://tiles.openfreemap.org/styles/positron';
-const ESRI = { version:8, sources:{ s:{ type:'raster', tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize:256, attribution:'© Esri, Maxar, Earthstar Geographics' }}, layers:[{id:'l',type:'raster',source:'s'}] };
+/* ---------- carte (sources Pista) ---------- */
+const OPENFREEMAP='https://tiles.openfreemap.org/styles/positron';
+const ESRI={version:8,sources:{s:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,attribution:'© Esri, Maxar, Earthstar Geographics'}},layers:[{id:'l',type:'raster',source:'s'}]};
 let sat=false;
-const map = new maplibregl.Map({ container:'map', style:OPENFREEMAP, center:[-1.47,43.32], zoom:11, attributionControl:{compact:true} });
-map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'bottom-right');
-$('basemap').onclick = () => { sat=!sat; map.setStyle(sat?ESRI:OPENFREEMAP); $('basemap').textContent = sat?'🗺️ Plan':'🛰️ Satellite'; };
+const map=new maplibregl.Map({container:'map',style:OPENFREEMAP,center:[-1.47,43.32],zoom:11,attributionControl:{compact:true}});
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+$('basemap').onclick=()=>{sat=!sat;map.setStyle(sat?ESRI:OPENFREEMAP);$('basemap').textContent=sat?'🗺️ Plan':'🛰️ Satellite';};
 
-/* viseur central : taille réglable, lit ses coins en lng/lat */
-function sizeFrame(){ const r=map.getContainer().getBoundingClientRect(); const pct=+$('frameSz').value/100; const s=Math.min(r.width,r.height)*pct; const f=$('frame'); f.style.width=s+'px'; f.style.height=s+'px'; }
-function frameBBox(){
-  const m=map.getContainer().getBoundingClientRect(), f=$('frame').getBoundingClientRect();
-  const x0=f.left-m.left,y0=f.top-m.top,x1=f.right-m.left,y1=f.bottom-m.top;
-  const nw=map.unproject([x0,y0]),ne=map.unproject([x1,y0]),se=map.unproject([x1,y1]),sw=map.unproject([x0,y1]);
-  return [Math.min(nw.lng,sw.lng),Math.min(sw.lat,se.lat),Math.max(ne.lng,se.lng),Math.max(nw.lat,ne.lat)];
-}
-addEventListener('resize',sizeFrame); map.on('load',sizeFrame); sizeFrame();
+function sizeFrame(){const r=map.getContainer().getBoundingClientRect();const s=Math.min(r.width,r.height)*(+$('frameSz').value/100);const f=$('frame');f.style.width=s+'px';f.style.height=s+'px';drawGrid();}
+function drawGrid(){const g=$('fgrid');const c=+$('cols').value,r=+$('rows').value;g.style.gridTemplateColumns=`repeat(${c},1fr)`;g.style.gridTemplateRows=`repeat(${r},1fr)`;g.innerHTML='';for(let k=0;k<c*r;k++)g.appendChild(document.createElement('div'));}
+function frameBBox(){const m=map.getContainer().getBoundingClientRect(),f=$('frame').getBoundingClientRect();const x0=f.left-m.left,y0=f.top-m.top,x1=f.right-m.left,y1=f.bottom-m.top;const nw=map.unproject([x0,y0]),ne=map.unproject([x1,y0]),se=map.unproject([x1,y1]),sw=map.unproject([x0,y1]);return [Math.min(nw.lng,sw.lng),Math.min(sw.lat,se.lat),Math.max(ne.lng,se.lng),Math.max(nw.lat,ne.lat)];}
+addEventListener('resize',sizeFrame);map.on('load',sizeFrame);sizeFrame();
 
 /* ---------- élévation ---------- */
-function ll2px(lng,lat,z){ const ws=256*2**z; const x=(lng+180)/360*ws; const s=Math.sin(lat*Math.PI/180); const y=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*ws; return [x,y]; }
-function pickZoom(w,s,e,n){ const mid=(s+n)/2; for(let z=14;z>=1;z--){ const wpx=Math.abs(ll2px(e,mid,z)[0]-ll2px(w,mid,z)[0]); const hpx=Math.abs(ll2px((w+e)/2,s,z)[1]-ll2px((w+e)/2,n,z)[1]); const tiles=(Math.floor(ll2px(e,mid,z)[0]/256)-Math.floor(ll2px(w,mid,z)[0]/256)+1)*(Math.floor(ll2px((w+e)/2,s,z)[1]/256)-Math.floor(ll2px((w+e)/2,n,z)[1]/256)+1); if(tiles<=36 && Math.max(wpx,hpx)<=2200) return z; } return 1; }
-async function fetchTile(z,x,y){ const r=await fetch(`/dem/${z}/${x}/${y}.png`); if(!r.ok) throw new Error(`tuile ${z}/${x}/${y} HTTP ${r.status}`); const bmp=await createImageBitmap(await r.blob()); const c=new OffscreenCanvas(256,256); const ctx=c.getContext('2d',{willReadFrequently:true}); ctx.drawImage(bmp,0,0); return ctx.getImageData(0,0,256,256).data; }
+function ll2px(lng,lat,z){const ws=256*2**z;const x=(lng+180)/360*ws;const s=Math.sin(lat*Math.PI/180);const y=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*ws;return[x,y];}
+function pickZoom(w,s,e,n){const mid=(s+n)/2;for(let z=14;z>=1;z--){const wpx=Math.abs(ll2px(e,mid,z)[0]-ll2px(w,mid,z)[0]);const hpx=Math.abs(ll2px((w+e)/2,s,z)[1]-ll2px((w+e)/2,n,z)[1]);const tiles=(Math.floor(ll2px(e,mid,z)[0]/256)-Math.floor(ll2px(w,mid,z)[0]/256)+1)*(Math.floor(ll2px((w+e)/2,s,z)[1]/256)-Math.floor(ll2px((w+e)/2,n,z)[1]/256)+1);if(tiles<=36&&Math.max(wpx,hpx)<=2200)return z;}return 1;}
+async function fetchTile(z,x,y){const r=await fetch(`/dem/${z}/${x}/${y}.png`);if(!r.ok)throw new Error(`tuile ${z}/${x}/${y} HTTP ${r.status}`);const bmp=await createImageBitmap(await r.blob());const c=new OffscreenCanvas(256,256);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(bmp,0,0);return ctx.getImageData(0,0,256,256).data;}
 async function buildHeightmap(b,N,onProg){
-  const [w,s,e,n]=b; const z=pickZoom(w,s,e,n);
+  const[w,s,e,n]=b;const z=pickZoom(w,s,e,n);
   const minTX=Math.floor(ll2px(w,(s+n)/2,z)[0]/256),maxTX=Math.floor(ll2px(e,(s+n)/2,z)[0]/256);
   const minTY=Math.floor(ll2px((w+e)/2,n,z)[1]/256),maxTY=Math.floor(ll2px((w+e)/2,s,z)[1]/256);
-  const nx=maxTX-minTX+1,ny=maxTY-minTY+1,W=nx*256,H=ny*256,elev=new Float32Array(W*H);
-  let done=0,total=nx*ny;
-  for(let ty=minTY;ty<=maxTY;ty++)for(let tx=minTX;tx<=maxTX;tx++){ const d=await fetchTile(z,tx,ty); const ox=(tx-minTX)*256,oy=(ty-minTY)*256; for(let p=0;p<65536;p++){ const h=(d[p*4]*256+d[p*4+1]+d[p*4+2]/256)-32768; elev[(oy+((p/256)|0))*W+(ox+(p%256))]=h; } done++; onProg&&onProg(done,total); }
-  const oX=minTX*256,oY=minTY*256,heights=new Float32Array(N*N); let mn=Infinity,mx=-Infinity;
-  for(let j=0;j<N;j++){ const lat=n+(s-n)*j/(N-1); for(let i=0;i<N;i++){ const lng=w+(e-w)*i/(N-1); const[gx,gy]=ll2px(lng,lat,z); let px=Math.max(0,Math.min(W-1,Math.round(gx-oX))),py=Math.max(0,Math.min(H-1,Math.round(gy-oY))); const h=elev[py*W+px]; heights[j*N+i]=h; if(h<mn)mn=h; if(h>mx)mx=h; }}
+  const nx=maxTX-minTX+1,ny=maxTY-minTY+1,W=nx*256,H=ny*256,elev=new Float32Array(W*H);let done=0,total=nx*ny;
+  for(let ty=minTY;ty<=maxTY;ty++)for(let tx=minTX;tx<=maxTX;tx++){const d=await fetchTile(z,tx,ty);const ox=(tx-minTX)*256,oy=(ty-minTY)*256;for(let p=0;p<65536;p++){const h=(d[p*4]*256+d[p*4+1]+d[p*4+2]/256)-32768;elev[(oy+((p/256)|0))*W+(ox+(p%256))]=h;}done++;onProg&&onProg(done,total);}
+  const oX=minTX*256,oY=minTY*256,heights=new Float32Array(N*N);let mn=Infinity,mx=-Infinity;
+  for(let j=0;j<N;j++){const lat=n+(s-n)*j/(N-1);for(let i=0;i<N;i++){const lng=w+(e-w)*i/(N-1);const[gx,gy]=ll2px(lng,lat,z);let px=Math.max(0,Math.min(W-1,Math.round(gx-oX))),py=Math.max(0,Math.min(H-1,Math.round(gy-oY)));const h=elev[py*W+px];heights[j*N+i]=h;if(h<mn)mn=h;if(h>mx)mx=h;}}
   const latMid=(s+n)/2,widthM=(e-w)*111320*Math.cos(latMid*Math.PI/180),heightM=(n-s)*111110;
-  return { heights,N,mn,mx,widthM,heightM,z };
+  return{heights,N,mn,mx,widthM,heightM,z};
 }
 
-/* ---------- maillage solide étanche ---------- */
-function buildMesh(hm,sizeMM,exag,baseMM){
-  const {heights,N,mn,mx,widthM,heightM}=hm; const aspect=widthM/heightM;
-  let sizeX,sizeY; if(aspect>=1){sizeX=sizeMM;sizeY=sizeMM/aspect;}else{sizeY=sizeMM;sizeX=sizeMM*aspect;}
-  const mmPerM=sizeX/widthM, vscale=mmPerM*exag;
-  const Z=(i,j)=>baseMM+(heights[j*N+i]-mn)*vscale, X=i=>i/(N-1)*sizeX-sizeX/2, Y=j=>(1-j/(N-1))*sizeY-sizeY/2;
-  const verts=[],idx=[],nv=N*N;
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++)verts.push(X(i),Y(j),Z(i,j));
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++)verts.push(X(i),Y(j),0);
-  const top=(i,j)=>j*N+i,bot=(i,j)=>nv+j*N+i;
-  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){const a=top(i,j),b=top(i+1,j),c=top(i+1,j+1),d=top(i,j+1);idx.push(a,b,c,a,c,d);}
-  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){const a=bot(i,j),b=bot(i+1,j),c=bot(i+1,j+1),d=bot(i,j+1);idx.push(a,c,b,a,d,c);}
-  for(let i=0;i<N-1;i++){let a=top(i,0),b=top(i+1,0),c=bot(i+1,0),d=bot(i,0);idx.push(a,c,b,a,d,c);a=top(i,N-1);b=top(i+1,N-1);c=bot(i+1,N-1);d=bot(i,N-1);idx.push(a,b,c,a,c,d);}
-  for(let j=0;j<N-1;j++){let a=top(0,j),b=top(0,j+1),c=bot(0,j+1),d=bot(0,j);idx.push(a,b,c,a,c,d);a=top(N-1,j);b=top(N-1,j+1);c=bot(N-1,j+1);d=bot(N-1,j);idx.push(a,c,b,a,d,c);}
-  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3)); g.setIndex(idx); g.computeVertexNormals();
-  return { geometry:g,sizeX,sizeY,hMM:(mx-mn)*vscale+baseMM };
+/* ---------- maillage : une pièce (sous-grille) = solide étanche, centré localement ---------- */
+function bound(k,K,N){return Math.round(k*(N-1)/K);}   // bornes d'index partagées entre pièces
+function pieceGeom(hm,prm,i0,i1,j0,j1){
+  const{heights,N}=hm;const{sizeX,sizeY,vscale,baseMM,mn}=prm;
+  const X=i=>i/(N-1)*sizeX-sizeX/2,Y=j=>(1-j/(N-1))*sizeY-sizeY/2,Z=(i,j)=>baseMM+(heights[j*N+i]-mn)*vscale;
+  const ni=i1-i0+1,nj=j1-j0+1,nv=ni*nj;
+  const pcx=(X(i0)+X(i1))/2,pcy=(Y(j0)+Y(j1))/2;          // centre de la pièce dans le modèle complet
+  const verts=[],idx=[];
+  for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)verts.push(X(i)-pcx,Y(j)-pcy,Z(i,j));
+  for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)verts.push(X(i)-pcx,Y(j)-pcy,0);
+  const top=(a,b)=>b*ni+a,bot=(a,b)=>nv+b*ni+a;          // a:0..ni-1 (i-i0), b:0..nj-1 (j-j0)
+  for(let b=0;b<nj-1;b++)for(let a=0;a<ni-1;a++){const p=top(a,b),q=top(a+1,b),r=top(a+1,b+1),s=top(a,b+1);idx.push(p,q,r,p,r,s);}
+  for(let b=0;b<nj-1;b++)for(let a=0;a<ni-1;a++){const p=bot(a,b),q=bot(a+1,b),r=bot(a+1,b+1),s=bot(a,b+1);idx.push(p,r,q,p,s,r);}
+  for(let a=0;a<ni-1;a++){let p=top(a,0),q=top(a+1,0),r=bot(a+1,0),s=bot(a,0);idx.push(p,r,q,p,s,r);p=top(a,nj-1);q=top(a+1,nj-1);r=bot(a+1,nj-1);s=bot(a,nj-1);idx.push(p,q,r,p,r,s);}
+  for(let b=0;b<nj-1;b++){let p=top(0,b),q=top(0,b+1),r=bot(0,b+1),s=bot(0,b);idx.push(p,q,r,p,r,s);p=top(ni-1,b);q=top(ni-1,b+1);r=bot(ni-1,b+1);s=bot(ni-1,b);idx.push(p,r,q,p,s,r);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setIndex(idx);g.computeVertexNormals();
+  return{geometry:g,pcx,pcy};
+}
+function buildPieces(hm,sizeMM,exag,baseMM,cols,rows){
+  const aspect=hm.widthM/hm.heightM;let sizeX,sizeY;if(aspect>=1){sizeX=sizeMM;sizeY=sizeMM/aspect;}else{sizeY=sizeMM;sizeX=sizeMM*aspect;}
+  const vscale=(sizeX/hm.widthM)*exag,prm={sizeX,sizeY,vscale,baseMM,mn:hm.mn};
+  const out=[];
+  for(let cy=0;cy<rows;cy++)for(let cx=0;cx<cols;cx++){
+    const i0=bound(cx,cols,hm.N),i1=bound(cx+1,cols,hm.N),j0=bound(cy,rows,hm.N),j1=bound(cy+1,rows,hm.N);
+    const pg=pieceGeom(hm,prm,i0,i1,j0,j1);pg.name=`topo3d_r${cy+1}_c${cx+1}`;out.push(pg);
+  }
+  return{pieces:out,sizeX,sizeY,hMM:(hm.mx-hm.mn)*vscale+baseMM,pieceX:sizeX/cols,pieceY:sizeY/rows};
 }
 
 /* ---------- aperçu 3D ---------- */
-const view=$('view'); let renderer,scene,camera,controls;
+const view=$('view');let renderer,scene,camera,controls,group;
 function initView(){
-  renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(2,devicePixelRatio));
-  scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0f1f);
-  camera=new THREE.PerspectiveCamera(45,1,0.1,5000); controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
-  scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.1)); const d=new THREE.DirectionalLight(0xffffff,1.4); d.position.set(1,2,1.5); scene.add(d);
-  view.appendChild(renderer.domElement); resize();
-  (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
+  renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,devicePixelRatio));
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x0a0f1f);
+  camera=new THREE.PerspectiveCamera(45,1,0.1,8000);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.1));const d=new THREE.DirectionalLight(0xffffff,1.4);d.position.set(1,2,1.5);scene.add(d);
+  view.appendChild(renderer.domElement);resize();
+  (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera);})();
 }
-function resize(){ if(!renderer)return; const w=view.clientWidth,h=view.clientHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+function resize(){if(!renderer)return;const w=view.clientWidth,h=view.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);
-function showMesh(res){
+function showPieces(res){
   if(!renderer)initView();
-  if(lastMesh){scene.remove(lastMesh);lastMesh.geometry.dispose();}
-  lastMesh=new THREE.Mesh(res.geometry,new THREE.MeshStandardMaterial({color:0xb9c6e6,roughness:0.85,metalness:0.05}));
-  scene.add(lastMesh); $('viewEmpty').style.display='none';
-  const r=Math.max(res.sizeX,res.sizeY); camera.position.set(r*0.85,-r*0.95,r*1.0); camera.up.set(0,0,1); camera.lookAt(0,0,0); controls.target.set(0,0,res.hMM/2);
+  if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
+  group=new THREE.Group();
+  const gap=res.pieces.length>1?1.06:1;const mat=new THREE.MeshStandardMaterial({color:0xb9c6e6,roughness:0.85,metalness:0.05});
+  res.pieces.forEach(p=>{const m=new THREE.Mesh(p.geometry,mat);m.position.set(p.pcx*gap,p.pcy*gap,0);group.add(m);});
+  scene.add(group);$('viewEmpty').style.display='none';
+  const r=Math.max(res.sizeX,res.sizeY)*gap;camera.position.set(r*0.85,-r*0.95,r*0.95);camera.up.set(0,0,1);camera.lookAt(0,0,0);controls.target.set(0,0,res.hMM/2);
 }
 
 /* ---------- pilotage ---------- */
-const bind=(id,fmt,k)=>{const el=$(id),out=$('v'+k),u=()=>out.textContent=fmt(el.value);el.oninput=u;u();};
-bind('frameSz',v=>v+' %','Frame'); bind('size',v=>v+' mm','Size'); bind('exag',v=>(+v).toFixed(1)+'×','Exag'); bind('base',v=>v+' mm','Base'); bind('res',v=>v,'Res');
-$('frameSz').addEventListener('input',sizeFrame);
+const bind=(id,fmt,k,extra)=>{const el=$(id),out=$('v'+k),u=()=>{out.textContent=fmt(el.value);extra&&extra();};el.oninput=u;u();};
+bind('frameSz',v=>v+' %','Frame',sizeFrame);bind('size',v=>v+' mm','Size');bind('exag',v=>(+v).toFixed(1)+'×','Exag');bind('base',v=>v+' mm','Base');bind('res',v=>v,'Res');
+bind('cols',v=>v,'Cols',()=>{drawGrid();pieceHint();});bind('rows',v=>v,'Rows',()=>{drawGrid();pieceHint();});
+function pieceHint(){const c=+$('cols').value,r=+$('rows').value;$('pieceInfo').innerHTML=(c*r===1)?'1 seule pièce. Augmente colonnes/lignes pour découper : chaque pièce sort en STL séparé (ZIP), bords jointifs à coller.':`<b>${c*r} pièces</b> (${c}×${r}). Téléchargement = ZIP de ${c*r} STL. Chaque pièce ≈ <b>${(+$('size').value/c).toFixed(0)}×${(+$('size').value/r).toFixed(0)} mm</b> max — assemble-les après impression.`;}
 
-$('gen').onclick = async () => {
-  const bbox=frameBBox();
-  $('gen').disabled=true; $('dl').disabled=true; $('status').className='status';
+$('gen').onclick=async()=>{
+  const bbox=frameBBox();lastBBox=bbox;$('gen').disabled=true;$('dl').disabled=true;$('status').className='status';
   try{
     const N=+$('res').value;
     $('status').textContent='Téléchargement des données d\'élévation…';
-    const hm=await buildHeightmap(bbox,N,(d,t)=>{ $('status').textContent=`Tuiles d'élévation ${d}/${t}…`; });
-    if(hm.mx-hm.mn < 0.5){ $('status').className='status err'; $('status').textContent='Zone quasi plate (mer / pas de relief) — cadre une zone avec du dénivelé.'; $('gen').disabled=false; return; }
-    $('status').textContent='Construction du maillage 3D…'; await new Promise(r=>setTimeout(r,20));
-    const res=buildMesh(hm,+$('size').value,+$('exag').value,+$('base').value); showMesh(res);
+    const hm=await buildHeightmap(bbox,N,(d,t)=>{$('status').textContent=`Tuiles d'élévation ${d}/${t}…`;});
+    if(hm.mx-hm.mn<0.5){$('status').className='status err';$('status').textContent='Zone quasi plate (mer / sans relief) — cadre une zone avec du dénivelé.';$('gen').disabled=false;return;}
+    $('status').textContent='Construction du maillage 3D…';await new Promise(r=>setTimeout(r,20));
+    const cols=+$('cols').value,rows=+$('rows').value;
+    const res=buildPieces(hm,+$('size').value,+$('exag').value,+$('base').value,cols,rows);
+    pieces=res.pieces;fullSize=[res.sizeX,res.sizeY];showPieces(res);
+    const np=pieces.length;
+    $('dl').textContent=np>1?`⬇️ Télécharger le ZIP (${np} pièces)`:'⬇️ Télécharger le STL';
     $('status').className='status ok';
-    $('status').textContent=`✅ Modèle prêt — ${res.sizeX.toFixed(0)}×${res.sizeY.toFixed(0)} mm · relief ${(res.hMM-(+$('base').value)).toFixed(0)} mm · altitudes ${hm.mn.toFixed(0)}→${hm.mx.toFixed(0)} m (zoom ${hm.z}).`;
-    $('dl').disabled=false; lastMesh._bbox=bbox;
-  }catch(err){ console.error(err); $('status').className='status err'; $('status').textContent='Erreur : '+err.message; }
+    $('status').textContent=`✅ ${np>1?np+' pièces':'Modèle'} prêt — total ${res.sizeX.toFixed(0)}×${res.sizeY.toFixed(0)} mm`+(np>1?`, pièce ${res.pieceX.toFixed(0)}×${res.pieceY.toFixed(0)} mm`:'')+` · relief ${(res.hMM-(+$('base').value)).toFixed(0)} mm · alt ${hm.mn.toFixed(0)}→${hm.mx.toFixed(0)} m (z${hm.z}).`;
+    $('dl').disabled=false;
+  }catch(err){console.error(err);$('status').className='status err';$('status').textContent='Erreur : '+err.message;}
   $('gen').disabled=false;
 };
-$('dl').onclick = () => {
-  if(!lastMesh)return; const data=new STLExporter().parse(lastMesh,{binary:true});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data],{type:'application/octet-stream'}));
-  a.download=`topo3d_${(lastMesh._bbox||[]).map(v=>(+v).toFixed(3)).join('_')}.stl`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+
+function stlBuf(geom){const m=new THREE.Mesh(geom);const d=new STLExporter().parse(m,{binary:true});return d.buffer?new Uint8Array(d.buffer):new Uint8Array(d);}
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}
+/* ZIP STORE maison (sans dépendance) — instantané vs JSZip */
+const CRCT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=CRCT[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function makeZip(files){
+  const enc=files.map(f=>({name:new TextEncoder().encode(f.name),data:f.data,crc:crc32(f.data)}));
+  const parts=[],central=[];let offset=0;
+  for(const f of enc){
+    const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);
+    h.setUint32(14,f.crc,true);h.setUint32(18,f.data.length,true);h.setUint32(22,f.data.length,true);h.setUint16(26,f.name.length,true);
+    const lh=new Uint8Array(30+f.name.length);lh.set(new Uint8Array(h.buffer));lh.set(f.name,30);
+    parts.push(lh,f.data);
+    const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);
+    c.setUint32(16,f.crc,true);c.setUint32(20,f.data.length,true);c.setUint32(24,f.data.length,true);c.setUint16(28,f.name.length,true);c.setUint32(42,offset,true);
+    const ch=new Uint8Array(46+f.name.length);ch.set(new Uint8Array(c.buffer));ch.set(f.name,46);central.push(ch);
+    offset+=lh.length+f.data.length;
+  }
+  let cdSize=0;for(const c of central)cdSize+=c.length;parts.push(...central);
+  const eo=new DataView(new ArrayBuffer(22));eo.setUint32(0,0x06054b50,true);eo.setUint16(8,enc.length,true);eo.setUint16(10,enc.length,true);eo.setUint32(12,cdSize,true);eo.setUint32(16,offset,true);
+  parts.push(new Uint8Array(eo.buffer));
+  return new Blob(parts,{type:'application/zip'});
+}
+$('dl').onclick=()=>{
+  if(!pieces.length)return;
+  const tag=(lastBBox||[]).map(v=>(+v).toFixed(3)).join('_');
+  if(pieces.length===1){dl(new Blob([stlBuf(pieces[0].geometry)],{type:'application/octet-stream'}),`topo3d_${tag}.stl`);return;}
+  $('dl').disabled=true;const old=$('dl').textContent;$('dl').textContent='Préparation du ZIP…';
+  const blob=makeZip(pieces.map(p=>({name:p.name+'.stl',data:stlBuf(p.geometry)})));
+  dl(blob,`topo3d_${tag}_${$('cols').value}x${$('rows').value}.zip`);
+  $('dl').textContent=old;$('dl').disabled=false;
 };
 </script>
 </body>
