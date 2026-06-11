@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Topo3D — terrain imprimable en 3D 🧊</title>
+<link href="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+  :root{--bg:#0b1020;--panel:#121a30;--line:#243154;--txt:#e9eefc;--sub:#93a0c4;--accent:#5ad1c0;--accent2:#7c8cff;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  .app{display:grid;grid-template-columns:1fr 380px;height:100vh}
+  #map{position:relative;height:100%}
+  .badge{position:absolute;top:12px;left:12px;z-index:5;background:rgba(11,16,32,.82);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-weight:800;letter-spacing:.3px}
+  .badge small{display:block;color:var(--sub);font-weight:500;font-size:.72rem;letter-spacing:0}
+  .maptools{position:absolute;top:12px;right:12px;z-index:5;display:flex;flex-direction:column;gap:8px}
+  .maptools button{font:inherit;font-weight:700;border:1px solid var(--line);border-radius:10px;padding:9px 13px;cursor:pointer;background:rgba(11,16,32,.82);color:var(--txt);backdrop-filter:blur(6px)}
+  .maptools button.on{background:var(--accent);color:#04231f;border-color:var(--accent)}
+  .panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+  .ph{padding:16px 18px;border-bottom:1px solid var(--line)}
+  .ph h1{font-size:1.1rem}.ph p{color:var(--sub);font-size:.82rem;margin-top:3px}
+  #view{height:300px;background:#0a0f1f;border-bottom:1px solid var(--line);position:relative}
+  #view .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:.85rem;text-align:center;padding:20px}
+  .ctrl{padding:16px 18px;overflow:auto;flex:1}
+  .row{margin-bottom:15px}
+  label{display:block;font-size:.8rem;color:var(--sub);margin-bottom:7px;display:flex;justify-content:space-between}
+  label b{color:var(--txt)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .btn{width:100%;font:inherit;font-weight:800;border:0;border-radius:12px;padding:14px;cursor:pointer;margin-top:4px}
+  .gen{background:var(--accent2);color:#0a0e22}
+  .dl{background:var(--accent);color:#04231f}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .status{font-size:.82rem;color:var(--sub);margin-top:12px;min-height:1.2em;line-height:1.5}
+  .status.err{color:#fb7185}.status.ok{color:var(--accent)}
+  .info{font-size:.76rem;color:var(--sub);background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:6px;line-height:1.5}
+  .info b{color:var(--txt)}
+  @media(max-width:820px){.app{grid-template-columns:1fr;grid-template-rows:45vh 55vh}.panel{border-left:0;border-top:1px solid var(--line)}#view{height:200px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="map">
+    <div class="badge">🧊 Topo3D<small>terrain imprimable</small></div>
+    <div class="maptools">
+      <button id="draw">✏️ Sélectionner la zone</button>
+      <button id="basemap">🛰️ Satellite</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><h1>Réglages d'impression</h1><p>Sélectionne une zone, génère, télécharge le STL.</p></div>
+    <div id="view"><div class="empty" id="viewEmpty">Le modèle 3D apparaîtra ici après génération.</div></div>
+    <div class="ctrl">
+      <div class="row"><label>Taille max <b id="vSize">100 mm</b></label><input type="range" id="size" min="40" max="200" step="5" value="100"></div>
+      <div class="row"><label>Exagération verticale <b id="vExag">1.5×</b></label><input type="range" id="exag" min="1" max="5" step="0.1" value="1.5"></div>
+      <div class="row"><label>Épaisseur du socle <b id="vBase">3 mm</b></label><input type="range" id="base" min="0" max="15" step="0.5" value="3"></div>
+      <div class="row"><label>Résolution (grille) <b id="vRes">180</b></label><input type="range" id="res" min="60" max="250" step="10" value="180"></div>
+      <button class="btn gen" id="gen" disabled>⛰️ Générer le modèle 3D</button>
+      <button class="btn dl" id="dl" disabled style="margin-top:10px">⬇️ Télécharger le STL</button>
+      <div class="status" id="status"></div>
+      <div class="info" id="info">Données d'élévation : <b>Terrain Tiles (Terrarium)</b>, AWS Open Data — gratuit. Le fichier STL s'interprète en <b>millimètres</b> dans ton slicer.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+
+const $ = id => document.getElementById(id);
+let bbox = null, lastMesh = null;
+
+/* ---------- carte ---------- */
+const OSM = { version:8, sources:{ s:{ type:'raster', tiles:['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap' }}, layers:[{id:'l',type:'raster',source:'s'}] };
+const SAT = { version:8, sources:{ s:{ type:'raster', tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize:256, attribution:'© Esri, Maxar, Earthstar Geographics' }}, layers:[{id:'l',type:'raster',source:'s'}] };
+let sat = false;
+const map = new maplibregl.Map({ container:'map', style:OSM, center:[-1.47,43.32], zoom:10 });
+map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+$('basemap').onclick = () => { sat=!sat; map.setStyle(sat?SAT:OSM); $('basemap').textContent = sat?'🗺️ Plan':'🛰️ Satellite'; map.once('styledata', ()=>{ if(bbox) drawSelection(bbox); }); };
+
+function drawSelection(b){
+  const poly = { type:'Feature', geometry:{ type:'Polygon', coordinates:[[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]],[b[0],b[1]]]] } };
+  if(map.getSource('sel')){ map.getSource('sel').setData(poly); }
+  else {
+    map.addSource('sel',{ type:'geojson', data:poly });
+    map.addLayer({ id:'sel-f', type:'fill', source:'sel', paint:{ 'fill-color':'#5ad1c0','fill-opacity':0.18 }});
+    map.addLayer({ id:'sel-l', type:'line', source:'sel', paint:{ 'line-color':'#5ad1c0','line-width':2 }});
+  }
+}
+
+/* dessin du rectangle par cliquer-glisser */
+let drawing=false, start=null;
+$('draw').onclick = () => { drawing=!drawing; $('draw').classList.toggle('on',drawing); map.getCanvas().style.cursor = drawing?'crosshair':''; if(drawing){ map.dragPan.disable(); $('status').textContent='Clique-glisse sur la carte pour tracer ta zone.'; } else { map.dragPan.enable(); } };
+map.on('mousedown', e => { if(!drawing) return; start=e.lngLat; });
+map.on('mousemove', e => { if(!drawing||!start) return; const w=Math.min(start.lng,e.lngLat.lng),ea=Math.max(start.lng,e.lngLat.lng),s=Math.min(start.lat,e.lngLat.lat),n=Math.max(start.lat,e.lngLat.lat); drawSelection([w,s,ea,n]); });
+map.on('mouseup', e => {
+  if(!drawing||!start) return;
+  const w=Math.min(start.lng,e.lngLat.lng),ea=Math.max(start.lng,e.lngLat.lng),s=Math.min(start.lat,e.lngLat.lat),n=Math.max(start.lat,e.lngLat.lat);
+  start=null; drawing=false; $('draw').classList.remove('on'); map.getCanvas().style.cursor=''; map.dragPan.enable();
+  if(Math.abs(ea-w)<1e-5||Math.abs(n-s)<1e-5){ $('status').textContent='Zone trop petite, recommence.'; return; }
+  bbox=[w,s,ea,n]; drawSelection(bbox); $('gen').disabled=false;
+  const latMid=(s+n)/2, kmX=(ea-w)*111.32*Math.cos(latMid*Math.PI/180), kmY=(n-s)*111.1;
+  $('status').className='status ok'; $('status').textContent=`Zone : ${kmX.toFixed(1)} × ${kmY.toFixed(1)} km. Prêt à générer.`;
+});
+
+/* ---------- élévation ---------- */
+function ll2px(lng,lat,z){ const ws=256*2**z; const x=(lng+180)/360*ws; const s=Math.sin(lat*Math.PI/180); const y=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*ws; return [x,y]; }
+function pickZoom(w,s,e,n){ const mid=(s+n)/2; for(let z=14;z>=1;z--){ const wpx=Math.abs(ll2px(e,mid,z)[0]-ll2px(w,mid,z)[0]); const hpx=Math.abs(ll2px((w+e)/2,s,z)[1]-ll2px((w+e)/2,n,z)[1]); const tiles=(Math.floor(ll2px(e,mid,z)[0]/256)-Math.floor(ll2px(w,mid,z)[0]/256)+1)*(Math.floor(ll2px((w+e)/2,s,z)[1]/256)-Math.floor(ll2px((w+e)/2,n,z)[1]/256)+1); if(tiles<=36 && Math.max(wpx,hpx)<=2200) return z; } return 1; }
+
+async function fetchTile(z,x,y){
+  const r = await fetch(`/dem/${z}/${x}/${y}.png`);
+  if(!r.ok) throw new Error(`tuile ${z}/${x}/${y} HTTP ${r.status}`);
+  const bmp = await createImageBitmap(await r.blob());
+  const c = new OffscreenCanvas(256,256); const ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(bmp,0,0); return ctx.getImageData(0,0,256,256).data;
+}
+
+async function buildHeightmap(b,N,onProg){
+  const [w,s,e,n]=b; const z=pickZoom(w,s,e,n);
+  const minTX=Math.floor(ll2px(w,(s+n)/2,z)[0]/256), maxTX=Math.floor(ll2px(e,(s+n)/2,z)[0]/256);
+  const minTY=Math.floor(ll2px((w+e)/2,n,z)[1]/256), maxTY=Math.floor(ll2px((w+e)/2,s,z)[1]/256);
+  const nx=maxTX-minTX+1, ny=maxTY-minTY+1;
+  // composite des tuiles dans un grand tableau d'élévation
+  const W=nx*256, H=ny*256, elev=new Float32Array(W*H);
+  let done=0, total=nx*ny;
+  for(let ty=minTY;ty<=maxTY;ty++) for(let tx=minTX;tx<=maxTX;tx++){
+    const d=await fetchTile(z,tx,ty);
+    const ox=(tx-minTX)*256, oy=(ty-minTY)*256;
+    for(let p=0;p<256*256;p++){ const r=d[p*4],g=d[p*4+1],bl=d[p*4+2]; const h=(r*256+g+bl/256)-32768; const px=ox+(p%256), py=oy+((p/256)|0); elev[py*W+px]=h; }
+    done++; onProg && onProg(done,total);
+  }
+  const originX=minTX*256, originY=minTY*256;
+  // échantillonnage sur grille NxN (nord en haut)
+  const heights=new Float32Array(N*N); let mn=Infinity,mx=-Infinity;
+  for(let j=0;j<N;j++){ const lat=n+(s-n)*j/(N-1); for(let i=0;i<N;i++){ const lng=w+(e-w)*i/(N-1);
+    const [gx,gy]=ll2px(lng,lat,z); let px=Math.round(gx-originX), py=Math.round(gy-originY);
+    px=Math.max(0,Math.min(W-1,px)); py=Math.max(0,Math.min(H-1,py));
+    const h=elev[py*W+px]; heights[j*N+i]=h; if(h<mn)mn=h; if(h>mx)mx=h; }}
+  const latMid=(s+n)/2, widthM=(e-w)*111320*Math.cos(latMid*Math.PI/180), heightM=(n-s)*111110;
+  return { heights, N, mn, mx, widthM, heightM, z };
+}
+
+/* ---------- maillage solide ---------- */
+function buildMesh(hm, sizeMM, exag, baseMM){
+  const { heights, N, mn, mx, widthM, heightM } = hm;
+  const aspect = widthM/heightM;
+  let sizeX, sizeY; if(aspect>=1){ sizeX=sizeMM; sizeY=sizeMM/aspect; } else { sizeY=sizeMM; sizeX=sizeMM*aspect; }
+  const mmPerM = sizeX/widthM;            // échelle horizontale
+  const vscale = mmPerM*exag;             // échelle verticale (vraie échelle × exagération)
+  const Z = (i,j) => baseMM + (heights[j*N+i]-mn)*vscale;
+  const X = i => i/(N-1)*sizeX - sizeX/2;
+  const Y = j => (1 - j/(N-1))*sizeY - sizeY/2;   // nord = +Y
+  const verts=[], idx=[]; const nv=N*N;
+  // sommets haut (0..nv-1) puis bas (nv..2nv-1)
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++) verts.push(X(i),Y(j),Z(i,j));
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++) verts.push(X(i),Y(j),0);
+  const top=(i,j)=>j*N+i, bot=(i,j)=>nv+j*N+i;
+  // surface haute
+  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){ const a=top(i,j),b=top(i+1,j),c=top(i+1,j+1),d=top(i,j+1); idx.push(a,b,c, a,c,d); }
+  // surface basse (winding inversé)
+  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){ const a=bot(i,j),b=bot(i+1,j),c=bot(i+1,j+1),d=bot(i,j+1); idx.push(a,c,b, a,d,c); }
+  // murs périmètre
+  for(let i=0;i<N-1;i++){ // sud (j=0) et nord (j=N-1)
+    let a=top(i,0),b=top(i+1,0),c=bot(i+1,0),d=bot(i,0); idx.push(a,c,b, a,d,c);
+    a=top(i,N-1);b=top(i+1,N-1);c=bot(i+1,N-1);d=bot(i,N-1); idx.push(a,b,c, a,c,d);
+  }
+  for(let j=0;j<N-1;j++){ // ouest (i=0) et est (i=N-1)
+    let a=top(0,j),b=top(0,j+1),c=bot(0,j+1),d=bot(0,j); idx.push(a,b,c, a,c,d);
+    a=top(N-1,j);b=top(N-1,j+1);c=bot(N-1,j+1);d=bot(N-1,j); idx.push(a,c,b, a,d,c);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return { geometry:g, sizeX, sizeY, hMM:(mx-mn)*vscale+baseMM };
+}
+
+/* ---------- aperçu 3D ---------- */
+const view=$('view'); let renderer,scene,camera,controls;
+function initView(){
+  renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(2,devicePixelRatio));
+  scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0f1f);
+  camera=new THREE.PerspectiveCamera(45,1,0.1,5000);
+  controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.1));
+  const d=new THREE.DirectionalLight(0xffffff,1.4); d.position.set(1,2,1.5); scene.add(d);
+  view.appendChild(renderer.domElement); resize();
+  (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
+}
+function resize(){ if(!renderer) return; const w=view.clientWidth,h=view.clientHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize);
+function showMesh(res){
+  if(!renderer) initView();
+  if(lastMesh){ scene.remove(lastMesh); lastMesh.geometry.dispose(); }
+  const mat=new THREE.MeshStandardMaterial({ color:0xb9c6e6, roughness:0.85, metalness:0.05, flatShading:false });
+  lastMesh=new THREE.Mesh(res.geometry,mat); scene.add(lastMesh);
+  $('viewEmpty').style.display='none';
+  const r=Math.max(res.sizeX,res.sizeY); camera.position.set(r*0.9,r*0.9,r*1.1); camera.lookAt(0,0,0); controls.target.set(0,0,res.hMM/2);
+}
+
+/* ---------- pilotage ---------- */
+const bind=(id,fmt,k)=>{ const el=$(id); const out=$('v'+k); const upd=()=>out.textContent=fmt(el.value); el.oninput=upd; upd(); };
+bind('size',v=>v+' mm','Size'); bind('exag',v=>(+v).toFixed(1)+'×','Exag'); bind('base',v=>v+' mm','Base'); bind('res',v=>v,'Res');
+
+$('gen').onclick = async () => {
+  if(!bbox) return;
+  $('gen').disabled=true; $('dl').disabled=true; $('status').className='status';
+  try{
+    const N=+$('res').value;
+    $('status').textContent='Téléchargement des données d\'élévation…';
+    const hm=await buildHeightmap(bbox,N,(d,t)=>{ $('status').textContent=`Tuiles d'élévation ${d}/${t}…`; });
+    $('status').textContent='Construction du maillage 3D…';
+    await new Promise(r=>setTimeout(r,20));
+    const res=buildMesh(hm,+$('size').value,+$('exag').value,+$('base').value);
+    showMesh(res);
+    $('status').className='status ok';
+    $('status').textContent=`✅ Modèle prêt — ${res.sizeX.toFixed(0)}×${res.sizeY.toFixed(0)} mm, dénivelé rendu ${(res.hMM-(+$('base').value)).toFixed(0)} mm (altitudes ${hm.mn.toFixed(0)}→${hm.mx.toFixed(0)} m, zoom ${hm.z}).`;
+    $('dl').disabled=false;
+  }catch(err){ console.error(err); $('status').className='status err'; $('status').textContent='Erreur : '+err.message; }
+  $('gen').disabled=false;
+};
+
+$('dl').onclick = () => {
+  if(!lastMesh) return;
+  const data=new STLExporter().parse(lastMesh,{binary:true});
+  const blob=new Blob([data],{type:'application/octet-stream'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  const b=bbox.map(v=>v.toFixed(3)).join('_'); a.download=`topo3d_${b}.stl`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+};
+</script>
+</body>
+</html>
