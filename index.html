@@ -66,6 +66,10 @@
       <div class="row"><label>Lignes <b id="vRows">1</b></label><input type="range" id="rows" min="1" max="6" step="1" value="1"></div>
       <div class="info" id="pieceInfo">1 seule pièce. Augmente colonnes/lignes pour découper : chaque pièce sort en STL séparé (ZIP), bords jointifs à coller.</div>
 
+      <div class="sec">🎨 Couleur (ortho + pistes)</div>
+      <label style="cursor:pointer"><span><input type="checkbox" id="colorMode" style="accent-color:var(--accent);margin-right:7px">Plaquer l'orthophoto + pistes</span></label>
+      <div class="info">Mode couleur = export <b>OBJ + texture</b> (zip) pour <b>impression pleine couleur</b> (Sculpteo…). Pièce unique (pas de découpe). Drape l'ortho ESRI + les pistes Pista du spot cadré.</div>
+
       <button class="btn gen" id="gen" style="margin-top:14px">⛰️ Générer le modèle 3D</button>
       <button class="btn dl" id="dl" disabled style="margin-top:10px">⬇️ Télécharger le STL</button>
       <div class="status" id="status"></div>
@@ -91,13 +95,15 @@ const OPENFREEMAP='https://tiles.openfreemap.org/styles/positron';
 const ESRI={version:8,sources:{s:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,attribution:'© Esri, Maxar, Earthstar Geographics'}},layers:[{id:'l',type:'raster',source:'s'}]};
 let sat=false;
 const map=new maplibregl.Map({container:'map',style:OPENFREEMAP,center:[-1.47,43.32],zoom:11,attributionControl:{compact:true}});
-map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');window.__map=map;
 $('basemap').onclick=()=>{sat=!sat;map.setStyle(sat?ESRI:OPENFREEMAP);$('basemap').textContent=sat?'🗺️ Plan':'🛰️ Satellite';};
 
 function sizeFrame(){const r=map.getContainer().getBoundingClientRect();const s=Math.min(r.width,r.height)*(+$('frameSz').value/100);const f=$('frame');f.style.width=s+'px';f.style.height=s+'px';drawGrid();}
 function drawGrid(){const g=$('fgrid');const c=+$('cols').value,r=+$('rows').value;g.style.gridTemplateColumns=`repeat(${c},1fr)`;g.style.gridTemplateRows=`repeat(${r},1fr)`;g.innerHTML='';for(let k=0;k<c*r;k++)g.appendChild(document.createElement('div'));}
 function frameBBox(){const m=map.getContainer().getBoundingClientRect(),f=$('frame').getBoundingClientRect();const x0=f.left-m.left,y0=f.top-m.top,x1=f.right-m.left,y1=f.bottom-m.top;const nw=map.unproject([x0,y0]),ne=map.unproject([x1,y0]),se=map.unproject([x1,y1]),sw=map.unproject([x0,y1]);return [Math.min(nw.lng,sw.lng),Math.min(sw.lat,se.lat),Math.max(ne.lng,se.lng),Math.max(nw.lat,ne.lat)];}
 addEventListener('resize',sizeFrame);map.on('load',sizeFrame);sizeFrame();
+let TRAILS=[];fetch('/spots/ibardin-trails.geojson').then(r=>r.json()).then(d=>{TRAILS=d.features||[];}).catch(()=>{});
+let isColor=false,colorObj=null;
 
 /* ---------- élévation ---------- */
 function ll2px(lng,lat,z){const ws=256*2**z;const x=(lng+180)/360*ws;const s=Math.sin(lat*Math.PI/180);const y=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*ws;return[x,y];}
@@ -166,6 +172,64 @@ function showPieces(res){
   const r=Math.max(res.sizeX,res.sizeY)*gap;camera.position.set(r*0.85,-r*0.95,r*0.95);camera.up.set(0,0,1);camera.lookAt(0,0,0);controls.target.set(0,0,res.hMM/2);
 }
 
+/* ---------- mode couleur : ortho + pistes drapées ---------- */
+function orthoZoom(b){const[w,s,e,n]=b;for(let z=17;z>=1;z--){const wpx=ll2px(e,(s+n)/2,z)[0]-ll2px(w,(s+n)/2,z)[0];const hpx=ll2px((w+e)/2,s,z)[1]-ll2px((w+e)/2,n,z)[1];const tx=Math.floor(ll2px(e,n,z)[0]/256)-Math.floor(ll2px(w,n,z)[0]/256)+1;const ty=Math.floor(ll2px(e,s,z)[1]/256)-Math.floor(ll2px(w,n,z)[1]/256)+1;if(tx*ty<=110&&Math.max(wpx,hpx)<=6500)return z;}return 1;}
+async function buildTexture(b,onProg){
+  const[w,s,e,n]=b,z=orthoZoom(b);
+  const tlx=Math.floor(ll2px(w,n,z)[0]/256),tly=Math.floor(ll2px(w,n,z)[1]/256),brx=Math.floor(ll2px(e,s,z)[0]/256),bry=Math.floor(ll2px(e,s,z)[1]/256);
+  const nx=brx-tlx+1,ny=bry-tly+1;
+  const comp=new OffscreenCanvas(nx*256,ny*256),ccx=comp.getContext('2d');let done=0,total=nx*ny;
+  for(let ty=tly;ty<=bry;ty++)for(let tx=tlx;tx<=brx;tx++){const r=await fetch(`/ortho/${z}/${ty}/${tx}`);if(!r.ok)throw new Error(`ortho ${z}/${ty}/${tx} HTTP ${r.status}`);const bmp=await createImageBitmap(await r.blob());ccx.drawImage(bmp,(tx-tlx)*256,(ty-tly)*256);done++;onProg&&onProg(done,total);}
+  const oX=tlx*256,oY=tly*256,pL=ll2px(w,n,z),pR=ll2px(e,s,z);
+  const sx=pL[0]-oX,sy=pL[1]-oY,sw=pR[0]-pL[0],sh=pR[1]-pL[1];
+  const maxDim=4096,sc=Math.min(1,maxDim/Math.max(sw,sh)),ow=Math.max(1,Math.round(sw*sc)),oh=Math.max(1,Math.round(sh*sc));
+  const tex=document.createElement('canvas');tex.width=ow;tex.height=oh;tex.getContext('2d').drawImage(comp,sx,sy,sw,sh,0,0,ow,oh);
+  return{canvas:tex,z,pxL:pL[0],pyT:pL[1],pxR:pR[0],pyB:pR[1]};
+}
+function drawTrailsOn(tex,b){
+  const{canvas,z,pxL,pyT,pxR,pyB}=tex,ctx=canvas.getContext('2d'),ow=canvas.width,oh=canvas.height;
+  const DC={green:'#2ecc71',blue:'#2e9bff',red:'#ff3b30',black:'#0a0a0a'};
+  const proj=(lng,lat)=>{const p=ll2px(lng,lat,z);return[(p[0]-pxL)/(pxR-pxL)*ow,(p[1]-pyT)/(pyB-pyT)*oh];};
+  const lw=Math.max(2.5,ow/380);ctx.lineJoin='round';ctx.lineCap='round';
+  for(const f of TRAILS){const g=f.geometry;if(!g)continue;const lines=g.type==='MultiLineString'?g.coordinates:[g.coordinates];const col=DC[(f.properties.difficulty||'').toLowerCase()]||'#ff8a00';
+    for(const ln of lines){for(let pass=0;pass<2;pass++){ctx.beginPath();ln.forEach((c,i)=>{const[x,y]=proj(c[0],c[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=pass?col:'rgba(255,255,255,.85)';ctx.lineWidth=pass?lw:lw+3.5;ctx.stroke();}}}
+}
+function buildColorMesh(hm,sizeMM,exag,baseMM,b,tex){
+  const{heights,N,mn,mx,widthM,heightM}=hm,[w,s,e,n]=b,aspect=widthM/heightM;
+  let sizeX,sizeY;if(aspect>=1){sizeX=sizeMM;sizeY=sizeMM/aspect;}else{sizeY=sizeMM;sizeX=sizeMM*aspect;}
+  const vscale=(sizeX/widthM)*exag;
+  const X=i=>i/(N-1)*sizeX-sizeX/2,Y=j=>(1-j/(N-1))*sizeY-sizeY/2,Z=(i,j)=>baseMM+(heights[j*N+i]-mn)*vscale;
+  const{z,pxL,pyT,pxR,pyB}=tex,UV=(i,j)=>{const lng=w+(e-w)*i/(N-1),lat=n+(s-n)*j/(N-1),p=ll2px(lng,lat,z);return[(p[0]-pxL)/(pxR-pxL),1-(p[1]-pyT)/(pyB-pyT)];};
+  const nv=N*N,verts=[],uvs=[],idx=[];
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){verts.push(X(i),Y(j),Z(i,j));const u=UV(i,j);uvs.push(u[0],u[1]);}
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){verts.push(X(i),Y(j),0);const u=UV(i,j);uvs.push(u[0],u[1]);}
+  const top=(i,j)=>j*N+i,bot=(i,j)=>nv+j*N+i;
+  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){const a=top(i,j),bb=top(i+1,j),c=top(i+1,j+1),d=top(i,j+1);idx.push(a,bb,c,a,c,d);}
+  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){const a=bot(i,j),bb=bot(i+1,j),c=bot(i+1,j+1),d=bot(i,j+1);idx.push(a,c,bb,a,d,c);}
+  for(let i=0;i<N-1;i++){let a=top(i,0),bb=top(i+1,0),c=bot(i+1,0),d=bot(i,0);idx.push(a,c,bb,a,d,c);a=top(i,N-1);bb=top(i+1,N-1);c=bot(i+1,N-1);d=bot(i,N-1);idx.push(a,bb,c,a,c,d);}
+  for(let j=0;j<N-1;j++){let a=top(0,j),bb=top(0,j+1),c=bot(0,j+1),d=bot(0,j);idx.push(a,bb,c,a,c,d);a=top(N-1,j);bb=top(N-1,j+1);c=bot(N-1,j+1);d=bot(N-1,j);idx.push(a,c,bb,a,d,c);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));g.setIndex(idx);g.computeVertexNormals();
+  return{geometry:g,sizeX,sizeY,hMM:(mx-mn)*vscale+baseMM};
+}
+function showSingle(geom,texture,res){
+  if(!renderer)initView();
+  if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
+  group=new THREE.Group();texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;texture.needsUpdate=true;
+  group.add(new THREE.Mesh(geom,new THREE.MeshStandardMaterial({map:texture,roughness:0.95,metalness:0})));
+  scene.add(group);$('viewEmpty').style.display='none';
+  const r=Math.max(res.sizeX,res.sizeY);camera.position.set(r*0.85,-r*0.95,r*0.95);camera.up.set(0,0,1);camera.lookAt(0,0,0);controls.target.set(0,0,res.hMM/2);
+}
+function exportColorZip(){
+  const g=colorObj.geometry,pos=g.attributes.position.array,uv=g.attributes.uv.array,nor=g.attributes.normal.array,id=g.index.array,nv=pos.length/3,base='topo3d_ibardin';
+  const L=['# Topo3D color export','mtllib '+base+'.mtl','o terrain','usemtl terrain'];
+  for(let i=0;i<nv;i++)L.push('v '+pos[i*3].toFixed(3)+' '+pos[i*3+1].toFixed(3)+' '+pos[i*3+2].toFixed(3));
+  for(let i=0;i<nv;i++)L.push('vt '+uv[i*2].toFixed(5)+' '+uv[i*2+1].toFixed(5));
+  for(let i=0;i<nv;i++)L.push('vn '+nor[i*3].toFixed(3)+' '+nor[i*3+1].toFixed(3)+' '+nor[i*3+2].toFixed(3));
+  for(let i=0;i<id.length;i+=3){const a=id[i]+1,b=id[i+1]+1,c=id[i+2]+1;L.push(`f ${a}/${a}/${a} ${b}/${b}/${b} ${c}/${c}/${c}`);}
+  const obj=new TextEncoder().encode(L.join('\n')),mtl=new TextEncoder().encode(`newmtl terrain\nKa 1 1 1\nKd 1 1 1\nillum 1\nmap_Kd ${base}.png\n`);
+  return new Promise(res=>{colorObj.texCanvas.toBlob(async bl=>{const png=new Uint8Array(await bl.arrayBuffer());res(makeZip([{name:base+'.obj',data:obj},{name:base+'.mtl',data:mtl},{name:base+'.png',data:png}]));},'image/png');});
+}
+
 /* ---------- pilotage ---------- */
 const bind=(id,fmt,k,extra)=>{const el=$(id),out=$('v'+k),u=()=>{out.textContent=fmt(el.value);extra&&extra();};el.oninput=u;u();};
 bind('frameSz',v=>v+' %','Frame',sizeFrame);bind('size',v=>v+' mm','Size');bind('exag',v=>(+v).toFixed(1)+'×','Exag');bind('base',v=>v+' mm','Base');bind('res',v=>v,'Res');
@@ -179,15 +243,32 @@ $('gen').onclick=async()=>{
     $('status').textContent='Téléchargement des données d\'élévation…';
     const hm=await buildHeightmap(bbox,N,(d,t)=>{$('status').textContent=`Tuiles d'élévation ${d}/${t}…`;});
     if(hm.mx-hm.mn<0.5){$('status').className='status err';$('status').textContent='Zone quasi plate (mer / sans relief) — cadre une zone avec du dénivelé.';$('gen').disabled=false;return;}
-    $('status').textContent='Construction du maillage 3D…';await new Promise(r=>setTimeout(r,20));
-    const cols=+$('cols').value,rows=+$('rows').value;
-    const res=buildPieces(hm,+$('size').value,+$('exag').value,+$('base').value,cols,rows);
-    pieces=res.pieces;fullSize=[res.sizeX,res.sizeY];showPieces(res);
-    const np=pieces.length;
-    $('dl').textContent=np>1?`⬇️ Télécharger le ZIP (${np} pièces)`:'⬇️ Télécharger le STL';
-    $('status').className='status ok';
-    $('status').textContent=`✅ ${np>1?np+' pièces':'Modèle'} prêt — total ${res.sizeX.toFixed(0)}×${res.sizeY.toFixed(0)} mm`+(np>1?`, pièce ${res.pieceX.toFixed(0)}×${res.pieceY.toFixed(0)} mm`:'')+` · relief ${(res.hMM-(+$('base').value)).toFixed(0)} mm · alt ${hm.mn.toFixed(0)}→${hm.mx.toFixed(0)} m (z${hm.z}).`;
-    $('dl').disabled=false;
+    if($('colorMode').checked){
+      isColor=true;
+      $('status').textContent="Téléchargement de l'orthophoto…";
+      const tex=await buildTexture(bbox,(d,t)=>{$('status').textContent=`Orthophoto ${d}/${t}…`;});
+      drawTrailsOn(tex,bbox);
+      $('status').textContent='Maillage + texture…';await new Promise(r=>setTimeout(r,20));
+      const cm=buildColorMesh(hm,+$('size').value,+$('exag').value,+$('base').value,bbox,tex);
+      cm.texCanvas=tex.canvas;colorObj=cm;
+      showSingle(cm.geometry,new THREE.CanvasTexture(tex.canvas),cm);
+      const nt=TRAILS.length;
+      $('dl').textContent='⬇️ Export couleur (.zip OBJ+texture)';
+      $('status').className='status ok';
+      $('status').textContent=`✅ Modèle couleur — ${cm.sizeX.toFixed(0)}×${cm.sizeY.toFixed(0)} mm · ortho z${tex.z}${nt?` · ${nt} pistes drapées`:''}. Impression pleine couleur (Sculpteo…).`;
+      $('dl').disabled=false;
+    } else {
+      isColor=false;
+      $('status').textContent='Construction du maillage 3D…';await new Promise(r=>setTimeout(r,20));
+      const cols=+$('cols').value,rows=+$('rows').value;
+      const res=buildPieces(hm,+$('size').value,+$('exag').value,+$('base').value,cols,rows);
+      pieces=res.pieces;fullSize=[res.sizeX,res.sizeY];showPieces(res);
+      const np=pieces.length;
+      $('dl').textContent=np>1?`⬇️ Télécharger le ZIP (${np} pièces)`:'⬇️ Télécharger le STL';
+      $('status').className='status ok';
+      $('status').textContent=`✅ ${np>1?np+' pièces':'Modèle'} prêt — total ${res.sizeX.toFixed(0)}×${res.sizeY.toFixed(0)} mm`+(np>1?`, pièce ${res.pieceX.toFixed(0)}×${res.pieceY.toFixed(0)} mm`:'')+` · relief ${(res.hMM-(+$('base').value)).toFixed(0)} mm · alt ${hm.mn.toFixed(0)}→${hm.mx.toFixed(0)} m (z${hm.z}).`;
+      $('dl').disabled=false;
+    }
   }catch(err){console.error(err);$('status').className='status err';$('status').textContent='Erreur : '+err.message;}
   $('gen').disabled=false;
 };
@@ -215,7 +296,8 @@ function makeZip(files){
   parts.push(new Uint8Array(eo.buffer));
   return new Blob(parts,{type:'application/zip'});
 }
-$('dl').onclick=()=>{
+$('dl').onclick=async()=>{
+  if(isColor){if(!colorObj)return;$('dl').disabled=true;const o=$('dl').textContent;$('dl').textContent='Préparation du ZIP…';try{const blob=await exportColorZip();dl(blob,'topo3d_ibardin_couleur.zip');}catch(e){$('status').className='status err';$('status').textContent='Erreur export : '+e.message;}$('dl').textContent=o;$('dl').disabled=false;return;}
   if(!pieces.length)return;
   const tag=(lastBBox||[]).map(v=>(+v).toFixed(3)).join('_');
   if(pieces.length===1){dl(new Blob([stlBuf(pieces[0].geometry)],{type:'application/octet-stream'}),`topo3d_${tag}.stl`);return;}
