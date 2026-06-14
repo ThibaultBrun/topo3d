@@ -55,7 +55,8 @@
     <div class="ph"><h1>Réglages d'impression</h1><p>Cadre la zone (déplace/zoome), règle, génère.</p></div>
     <div id="view"><div class="empty" id="viewEmpty">Le modèle 3D apparaîtra ici après génération.</div></div>
     <div class="ctrl">
-      <div class="row"><label>Cadre <b id="vFrame">72 %</b></label><input type="range" id="frameSz" min="35" max="92" step="1" value="72"></div>
+      <div class="row"><label>📍 Spot Pista</label><select id="spotSel" style="width:100%;background:#0f1430;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit"><option value="">— Libre (cadre manuel) —</option></select></div>
+      <div class="row" id="frameRow"><label>Cadre <b id="vFrame">72 %</b></label><input type="range" id="frameSz" min="35" max="92" step="1" value="72"></div>
       <div class="row"><label>Taille totale max <b id="vSize">120 mm</b></label><input type="range" id="size" min="40" max="400" step="5" value="120"></div>
       <div class="row"><label>Exagération verticale <b id="vExag">2.0×</b></label><input type="range" id="exag" min="1" max="6" step="0.1" value="2"></div>
       <div class="row"><label>Épaisseur du socle <b id="vBase">3 mm</b></label><input type="range" id="base" min="0" max="15" step="0.5" value="3"></div>
@@ -102,7 +103,18 @@ function sizeFrame(){const r=map.getContainer().getBoundingClientRect();const s=
 function drawGrid(){const g=$('fgrid');const c=+$('cols').value,r=+$('rows').value;g.style.gridTemplateColumns=`repeat(${c},1fr)`;g.style.gridTemplateRows=`repeat(${r},1fr)`;g.innerHTML='';for(let k=0;k<c*r;k++)g.appendChild(document.createElement('div'));}
 function frameBBox(){const m=map.getContainer().getBoundingClientRect(),f=$('frame').getBoundingClientRect();const x0=f.left-m.left,y0=f.top-m.top,x1=f.right-m.left,y1=f.bottom-m.top;const nw=map.unproject([x0,y0]),ne=map.unproject([x1,y0]),se=map.unproject([x1,y1]),sw=map.unproject([x0,y1]);return [Math.min(nw.lng,sw.lng),Math.min(sw.lat,se.lat),Math.max(ne.lng,se.lng),Math.max(nw.lat,ne.lat)];}
 addEventListener('resize',sizeFrame);map.on('load',sizeFrame);sizeFrame();
-let TRAILS=[];fetch('/spots/ibardin-trails.geojson').then(r=>r.json()).then(d=>{TRAILS=d.features||[];}).catch(()=>{});
+let TRAILS=[],SPOTS=[],selectedSpot=null;
+fetch('/spots/index.json').then(r=>r.json()).then(list=>{SPOTS=list||[];const sel=$('spotSel');for(const sp of SPOTS){const o=document.createElement('option');o.value=sp.slug;o.textContent=sp.name;sel.appendChild(o);}}).catch(()=>{});
+$('spotSel').onchange=async()=>{
+  const slug=$('spotSel').value;
+  if(!slug){selectedSpot=null;TRAILS=[];$('frame').style.display='';$('frameRow').style.display='';sizeFrame();return;}
+  const sp=SPOTS.find(s=>s.slug===slug);if(!sp)return;
+  const[w,s,e,n]=sp.bbox,dw=(e-w)*0.08,dh=(n-s)*0.08;       // marge 8% autour des pistes
+  selectedSpot={slug,name:sp.name,bbox:[w-dw,s-dh,e+dw,n+dh]};
+  $('frame').style.display='none';$('frameRow').style.display='none';
+  map.fitBounds([[w-dw,s-dh],[e+dw,n+dh]],{padding:20,duration:700});
+  try{const d=await(await fetch(`/spots/${slug}-trails.geojson`)).json();TRAILS=d.features||[];}catch(e){TRAILS=[];}
+};
 let isColor=false,colorObj=null;
 
 /* ---------- élévation ---------- */
@@ -241,7 +253,7 @@ bind('cols',v=>v,'Cols',()=>{drawGrid();pieceHint();});bind('rows',v=>v,'Rows',(
 function pieceHint(){const c=+$('cols').value,r=+$('rows').value;$('pieceInfo').innerHTML=(c*r===1)?'1 seule pièce. Augmente colonnes/lignes pour découper : chaque pièce sort en STL séparé (ZIP), bords jointifs à coller.':`<b>${c*r} pièces</b> (${c}×${r}). Téléchargement = ZIP de ${c*r} STL. Chaque pièce ≈ <b>${(+$('size').value/c).toFixed(0)}×${(+$('size').value/r).toFixed(0)} mm</b> max — assemble-les après impression.`;}
 
 $('gen').onclick=async()=>{
-  const bbox=frameBBox();lastBBox=bbox;$('gen').disabled=true;$('dl').disabled=true;$('status').className='status';
+  const bbox=selectedSpot?selectedSpot.bbox.slice():frameBBox();lastBBox=bbox;$('gen').disabled=true;$('dl').disabled=true;$('status').className='status';
   try{
     const N=+$('res').value;
     $('status').textContent='Téléchargement des données d\'élévation…';
