@@ -15,6 +15,15 @@
   .badge small{display:block;color:var(--sub);font-weight:500;font-size:.72rem;letter-spacing:0}
   .maptools{position:absolute;top:12px;right:12px;z-index:5;display:flex;flex-direction:column;gap:8px}
   .maptools button{font:inherit;font-weight:700;border:1px solid var(--line);border-radius:10px;padding:9px 13px;cursor:pointer;background:rgba(11,16,32,.82);color:var(--txt);backdrop-filter:blur(6px)}
+  .search{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;width:min(360px,52%)}
+  .search input{width:100%;font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 13px;background:rgba(11,16,32,.92);color:var(--txt);backdrop-filter:blur(6px)}
+  .search input::placeholder{color:var(--sub)}
+  .search input:focus{outline:none;border-color:var(--accent)}
+  .results{margin-top:6px;background:rgba(11,16,32,.97);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:none;backdrop-filter:blur(6px)}
+  .results.on{display:block}
+  .results div{padding:9px 12px;font-size:.8rem;cursor:pointer;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .results div:last-child{border-bottom:0}
+  .results div:hover{background:#1a2546}
   .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:2px solid var(--accent);border-radius:10px;box-shadow:0 0 0 9999px rgba(8,12,24,.32);pointer-events:none;z-index:4}
   .frame .lbl{position:absolute;top:-26px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:.72rem;font-weight:700;color:var(--accent);background:rgba(11,16,32,.8);padding:3px 9px;border-radius:8px}
   .frame .grid{position:absolute;inset:0;display:grid;pointer-events:none}
@@ -40,13 +49,23 @@
   .status.err{color:#fb7185}.status.ok{color:var(--accent)}
   .info{font-size:.76rem;color:var(--sub);background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:6px;line-height:1.5}
   .info b{color:var(--txt)}
-  @media(max-width:820px){.app{grid-template-columns:1fr;grid-template-rows:46vh 54vh}.panel{border-left:0;border-top:1px solid var(--line)}#view{height:180px}}
+  @media(max-width:820px){
+    body{height:auto;overflow:auto}
+    .app{grid-template-columns:1fr;height:auto}
+    #map{height:55vh;min-height:340px}
+    .panel{border-left:0;border-top:1px solid var(--line)}
+    #view{height:220px}
+    .ctrl{overflow:visible;flex:none}
+    .badge{display:none}
+    .search{left:12px;right:12px;width:auto;max-width:calc(100% - 64px);transform:none}
+  }
 </style>
 </head>
 <body>
 <div class="app">
   <div id="map">
     <div class="badge">🧊 Topo3D<small>terrain imprimable</small></div>
+    <div class="search" id="search"><input id="q" type="text" placeholder="🔍 Rechercher un lieu…" autocomplete="off"><div class="results" id="results"></div></div>
     <div class="maptools"><button id="basemap">🛰️ Satellite</button></div>
     <div class="frame" id="frame"><span class="lbl">Cadre la zone à imprimer</span><div class="grid" id="fgrid"></div><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i></div>
   </div>
@@ -98,6 +117,30 @@ let sat=false;
 const map=new maplibregl.Map({container:'map',style:OPENFREEMAP,center:[-1.47,43.32],zoom:11,attributionControl:{compact:true}});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');window.__map=map;
 $('basemap').onclick=()=>{sat=!sat;map.setStyle(sat?ESRI:OPENFREEMAP);$('basemap').textContent=sat?'🗺️ Plan':'🛰️ Satellite';};
+
+/* ---------- recherche de lieu (Nominatim) ---------- */
+const qEl=$('q'),resEl=$('results');let qTimer=null,qAbort=null;
+function hideResults(){resEl.classList.remove('on');resEl.innerHTML='';}
+function gotoResult(it){
+  hideResults();qEl.value=(it.display_name||'').split(',')[0];
+  const bb=it.boundingbox;
+  if(bb&&bb.length===4)map.fitBounds([[+bb[2],+bb[0]],[+bb[3],+bb[1]]],{padding:40,maxZoom:15,duration:900});
+  else map.flyTo({center:[+it.lon,+it.lat],zoom:13,duration:900});
+}
+async function doSearch(text){
+  if(qAbort)qAbort.abort();qAbort=new AbortController();
+  try{
+    const u=`/geocode/search?format=jsonv2&limit=6&accept-language=fr&q=${encodeURIComponent(text)}`;
+    const r=await fetch(u,{signal:qAbort.signal,headers:{Accept:'application/json'}});
+    if(!r.ok)return;const list=await r.json();resEl.innerHTML='';
+    if(!list.length){resEl.innerHTML='<div style="color:var(--sub);cursor:default">Aucun résultat</div>';resEl.classList.add('on');return;}
+    for(const it of list){const d=document.createElement('div');d.textContent=it.display_name;d.title=it.display_name;d.onclick=()=>gotoResult(it);resEl.appendChild(d);}
+    resEl.classList.add('on');
+  }catch(e){if(e.name!=='AbortError')console.error(e);}
+}
+qEl.addEventListener('input',()=>{const t=qEl.value.trim();clearTimeout(qTimer);if(t.length<3){hideResults();return;}qTimer=setTimeout(()=>doSearch(t),350);});
+qEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const first=resEl.querySelector('div[title]');if(first)first.click();else if(qEl.value.trim().length>=3)doSearch(qEl.value.trim());}else if(e.key==='Escape')hideResults();});
+document.addEventListener('click',e=>{if(!$('search').contains(e.target))hideResults();});
 
 function sizeFrame(){const r=map.getContainer().getBoundingClientRect();const s=Math.min(r.width,r.height)*(+$('frameSz').value/100);const f=$('frame');f.style.width=s+'px';f.style.height=s+'px';drawGrid();}
 function drawGrid(){const g=$('fgrid');const c=+$('cols').value,r=+$('rows').value;g.style.gridTemplateColumns=`repeat(${c},1fr)`;g.style.gridTemplateRows=`repeat(${r},1fr)`;g.innerHTML='';for(let k=0;k<c*r;k++)g.appendChild(document.createElement('div'));}
@@ -184,7 +227,7 @@ function showPieces(res){
   if(!renderer)initView();
   if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
   group=new THREE.Group();
-  const gap=res.pieces.length>1?1.06:1;const mat=new THREE.MeshStandardMaterial({color:0xb9c6e6,roughness:0.85,metalness:0.05});
+  const gap=res.pieces.length>1?1.06:1;const mat=new THREE.MeshStandardMaterial({color:0xb9c6e6,roughness:0.85,metalness:0.05,side:THREE.DoubleSide});
   res.pieces.forEach(p=>{const m=new THREE.Mesh(p.geometry,mat);m.position.set(p.pcx*gap,p.pcy*gap,0);group.add(m);});
   scene.add(group);$('viewEmpty').style.display='none';fit();
 }
@@ -232,7 +275,8 @@ function showSingle(geom,texture,res){
   if(!renderer)initView();
   if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
   group=new THREE.Group();texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;texture.needsUpdate=true;
-  group.add(new THREE.Mesh(geom,new THREE.MeshStandardMaterial({map:texture,roughness:1,metalness:0})));
+  const m=new THREE.MeshStandardMaterial({map:texture,emissive:0xffffff,emissiveMap:texture,emissiveIntensity:0.35,roughness:1,metalness:0,side:THREE.DoubleSide,transparent:false,depthWrite:true});
+  group.add(new THREE.Mesh(geom,m));
   scene.add(group);$('viewEmpty').style.display='none';fit();
 }
 function exportColorZip(){
