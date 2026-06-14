@@ -155,21 +155,21 @@ const view=$('view');let renderer,scene,camera,controls,group;
 function initView(){
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,devicePixelRatio));
   scene=new THREE.Scene();scene.background=new THREE.Color(0x0a0f1f);
-  camera=new THREE.PerspectiveCamera(45,1,0.1,8000);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
-  scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.1));const d=new THREE.DirectionalLight(0xffffff,1.4);d.position.set(1,2,1.5);scene.add(d);
+  camera=new THREE.PerspectiveCamera(45,1,0.1,12000);camera.up.set(0,0,1);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+  scene.add(new THREE.AmbientLight(0xffffff,0.9));scene.add(new THREE.HemisphereLight(0xdfeaff,0x36425c,0.55));const d=new THREE.DirectionalLight(0xffffff,0.75);d.position.set(1.2,-0.8,2);scene.add(d);
   view.appendChild(renderer.domElement);resize();
   (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera);})();
 }
-function resize(){if(!renderer)return;const w=view.clientWidth,h=view.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+function resize(){if(!renderer)return;const w=view.clientWidth,h=view.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();if(group)fit();}
 addEventListener('resize',resize);
+function fit(){const box=new THREE.Box3().setFromObject(group);const c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());const rad=Math.max(sz.x,sz.y,sz.z)*0.6;const dist=rad/Math.sin(camera.fov*Math.PI/360)*1.08;const dir=new THREE.Vector3(0.45,-0.6,0.92).normalize();camera.position.copy(c).add(dir.multiplyScalar(dist));camera.near=Math.max(0.1,dist/300);camera.far=dist*30;camera.updateProjectionMatrix();controls.target.copy(c);camera.lookAt(c);}
 function showPieces(res){
   if(!renderer)initView();
   if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
   group=new THREE.Group();
   const gap=res.pieces.length>1?1.06:1;const mat=new THREE.MeshStandardMaterial({color:0xb9c6e6,roughness:0.85,metalness:0.05});
   res.pieces.forEach(p=>{const m=new THREE.Mesh(p.geometry,mat);m.position.set(p.pcx*gap,p.pcy*gap,0);group.add(m);});
-  scene.add(group);$('viewEmpty').style.display='none';
-  const r=Math.max(res.sizeX,res.sizeY)*gap;camera.position.set(r*0.85,-r*0.95,r*0.95);camera.up.set(0,0,1);camera.lookAt(0,0,0);controls.target.set(0,0,res.hMM/2);
+  scene.add(group);$('viewEmpty').style.display='none';fit();
 }
 
 /* ---------- mode couleur : ortho + pistes drapées ---------- */
@@ -190,9 +190,9 @@ function drawTrailsOn(tex,b){
   const{canvas,z,pxL,pyT,pxR,pyB}=tex,ctx=canvas.getContext('2d'),ow=canvas.width,oh=canvas.height;
   const DC={green:'#2ecc71',blue:'#2e9bff',red:'#ff3b30',black:'#0a0a0a'};
   const proj=(lng,lat)=>{const p=ll2px(lng,lat,z);return[(p[0]-pxL)/(pxR-pxL)*ow,(p[1]-pyT)/(pyB-pyT)*oh];};
-  const lw=Math.max(2.5,ow/380);ctx.lineJoin='round';ctx.lineCap='round';
+  const lw=Math.max(4,ow/220);ctx.lineJoin='round';ctx.lineCap='round';
   for(const f of TRAILS){const g=f.geometry;if(!g)continue;const lines=g.type==='MultiLineString'?g.coordinates:[g.coordinates];const col=DC[(f.properties.difficulty||'').toLowerCase()]||'#ff8a00';
-    for(const ln of lines){for(let pass=0;pass<2;pass++){ctx.beginPath();ln.forEach((c,i)=>{const[x,y]=proj(c[0],c[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=pass?col:'rgba(255,255,255,.85)';ctx.lineWidth=pass?lw:lw+3.5;ctx.stroke();}}}
+    for(const ln of lines){for(let pass=0;pass<2;pass++){ctx.beginPath();ln.forEach((c,i)=>{const[x,y]=proj(c[0],c[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=pass?col:'rgba(0,0,0,.55)';ctx.lineWidth=pass?lw:lw+5;ctx.stroke();}}}
 }
 function buildColorMesh(hm,sizeMM,exag,baseMM,b,tex){
   const{heights,N,mn,mx,widthM,heightM}=hm,[w,s,e,n]=b,aspect=widthM/heightM;
@@ -215,9 +215,8 @@ function showSingle(geom,texture,res){
   if(!renderer)initView();
   if(group){scene.remove(group);group.traverse(o=>o.geometry&&o.geometry.dispose());}
   group=new THREE.Group();texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;texture.needsUpdate=true;
-  group.add(new THREE.Mesh(geom,new THREE.MeshStandardMaterial({map:texture,roughness:0.95,metalness:0})));
-  scene.add(group);$('viewEmpty').style.display='none';
-  const r=Math.max(res.sizeX,res.sizeY);camera.position.set(r*0.85,-r*0.95,r*0.95);camera.up.set(0,0,1);camera.lookAt(0,0,0);controls.target.set(0,0,res.hMM/2);
+  group.add(new THREE.Mesh(geom,new THREE.MeshStandardMaterial({map:texture,roughness:1,metalness:0})));
+  scene.add(group);$('viewEmpty').style.display='none';fit();
 }
 function exportColorZip(){
   const g=colorObj.geometry,pos=g.attributes.position.array,uv=g.attributes.uv.array,nor=g.attributes.normal.array,id=g.index.array,nv=pos.length/3,base='topo3d_ibardin';
